@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.integrate import solve_ivp
 
-# github test
+# github test 2
 
 def setup_equations():
     print("Härleder ekvationer med SymPy (detta tar några sekunder)...")
