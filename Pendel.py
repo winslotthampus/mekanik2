@@ -327,7 +327,7 @@ def run_simulation(step):
         plt.legend()
 
         plt.subplot(2, 2, 4)
-        plt.title('Stroboskop-rörelse')
+        plt.title('Rörelse över tid')
         plt.axhline(0, color='k', lw=1)
         plt.axvline(0, color='k', lw=1)
 
