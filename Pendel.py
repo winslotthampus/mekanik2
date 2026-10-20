@@ -83,19 +83,28 @@ def setup_equations():
     eq_theta_sym = sp.expand(eq_theta.subs(subs_dict))
     eq_phi_sym = sp.expand(eq_phi.subs(subs_dict))
 
-    #
+    # Omvandlar de symboliska ekvationerna till en matrisform
     eqns = [eq_theta_sym, eq_phi_sym]
+    
     M_matrix, F_vector = sp.linear_eq_to_matrix(eqns, [th_dd, ph_dd])
 
     
-    params = (M, k_rad, d, L, m, g, tau, tau_theta)
-    states = (th, ph, th_d, ph_d)
-
+    # Definierar ordningen på variablerna för de snabba Numpy-funktionerna nedan
+     # Konstanter och yttre krafter
+    params = (M, k_rad, d, L, m, g, tau, tau_theta) 
+    # Föränderliga variabler (vinklar och hastigheter)
+    states = (th, ph, th_d, ph_d)                    
+    # Skapar lambdify-funktioner för att snabbt kunna beräkna
+    # M-matrisen och F-vektorn med Numpy
     M_func = sp.lambdify(params + states, M_matrix, "numpy")
     F_func = sp.lambdify(params + states, F_vector, "numpy")
 
+    # Ersätter symboliska variabler i uttrycket för den kinetiska och potentiella
+    # energin med värden eller andra uttryck från subs_dict.
     T_sym = T.subs(subs_dict)
     V_sym = V.subs(subs_dict)
+    # Omvandlar uttrycket för kinetisk energi till en funktion som kan beräknas numeriskt med NumPy.
+    # Funktionen tar emot parametrarna och tillståndsvariablerna i ordningen params + states.
     T_func = sp.lambdify(params + states, T_sym, "numpy")
     V_func = sp.lambdify(params + states, V_sym, "numpy")
 
