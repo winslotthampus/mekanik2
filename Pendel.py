@@ -9,6 +9,10 @@ import os
 # ekvationer för de fysiska problemen
 def setup_equations():
     print("Härleder ekvationer med SymPy...")
+# funktionen som byggeer upp våra matematiska
+# ekvationer för de fysiska problemen
+def setup_equations():
+    print("Härleder ekvationer med SymPy")
     # Definierar tiden (t) som en symbolisk variabel i SymPy
     t = sp.Symbol('t')
 
@@ -22,6 +26,7 @@ def setup_equations():
     tau, tau_theta = sp.symbols('tau tau_theta', real=True)
 
     # Definierar vinklarna theta och phi som funktioner som beror av tiden t.
+   # Definierar vinklarna theta och phi som funktioner som beror av tiden t.
     theta_f = sp.Function('theta')(t)
     phi_f = sp.Function('phi')(t)
     # Beräknar förstaderivatan (vinkelhastigheten) för båda vinklarna 
@@ -93,8 +98,28 @@ def setup_equations():
     M_func = sp.lambdify(params + states, M_matrix, "numpy")
     F_func = sp.lambdify(params + states, F_vector, "numpy")
 
+    # Omvandlar de symboliska ekvationerna till en matrisform
+    eqns = [eq_theta_sym, eq_phi_sym]
+    
+    M_matrix, F_vector = sp.linear_eq_to_matrix(eqns, [th_dd, ph_dd])
+
+    
+    # Definierar ordningen på variablerna för de snabba Numpy-funktionerna nedan
+     # Konstanter och yttre krafter
+    params = (M, k_rad, d, L, m, g, tau, tau_theta) 
+    # Föränderliga variabler (vinklar och hastigheter)
+    states = (th, ph, th_d, ph_d)                    
+    # Skapar lambdify-funktioner för att snabbt kunna beräkna
+    # M-matrisen och F-vektorn med Numpy
+    M_func = sp.lambdify(params + states, M_matrix, "numpy")
+    F_func = sp.lambdify(params + states, F_vector, "numpy")
+
+    # Ersätter symboliska variabler i uttrycket för den kinetiska och potentiella
+    # energin med värden eller andra uttryck från subs_dict.
     T_sym = T.subs(subs_dict)
     V_sym = V.subs(subs_dict)
+    # Omvandlar uttrycket för kinetisk energi till en funktion som kan beräknas numeriskt med NumPy.
+    # Funktionen tar emot parametrarna och tillståndsvariablerna i ordningen params + states.
     T_func = sp.lambdify(params + states, T_sym, "numpy")
     V_func = sp.lambdify(params + states, V_sym, "numpy")
 
@@ -103,6 +128,8 @@ def setup_equations():
 
 # Nominella parametrar
 p_M_nom = 68.0
+
+p_M = 68.0
 p_k = 0.5
 p_L = 2.0
 p_m = 15.0
@@ -110,11 +137,14 @@ p_g = 9.81
 phi_max = np.pi / 2.1
 tau_max_nom = 500.0
 sim_tid_steg2 = 20  # Ändrat från 15 till 20 sekunder
+tau_max = 500.0
+sim_tid_steg2 = 15  
 
 M_func, F_func, T_func, V_func = setup_equations()
 
 
 def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d, curr_tau_max=tau_max_nom, curr_M=p_M_nom):
+def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
     theta, phi, theta_d, phi_d = y
 
     tau_val = 0.0
@@ -128,6 +158,16 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d, curr_tau_max=tau_ma
 
         tau_val = np.clip(tau_ideal, -curr_tau_max, 1.5 * curr_tau_max)
 
+       
+        pump_switch = 0.5 * (1.0 + np.tanh(theta_d / 0.15))
+        phi_ref = phi_max * pump_switch
+
+        tau_ideal = -curr_Kp * p_M * p_g * curr_d * (phi - phi_ref) - curr_Kd * phi_d
+
+        
+        tau_val = np.clip(tau_ideal, -tau_max, 1.5 * tau_max)
+
+        
         k_stop_phi = 3000.0
         d_stop_phi = 400.0
         if phi < 0.0:
@@ -135,6 +175,7 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d, curr_tau_max=tau_ma
         elif phi > phi_max:
             tau_val += -k_stop_phi * (phi - phi_max) - d_stop_phi * phi_d
 
+       
         c_lin = 6.0
         c_quad = 18.0
         tau_theta_val = -c_lin * theta_d - c_quad * theta_d * abs(theta_d)
@@ -145,6 +186,11 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d, curr_tau_max=tau_ma
     )
     F_vec = np.array(
         F_func(curr_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
+        M_func(p_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
+        dtype=float
+    )
+    F_vec = np.array(
+        F_func(p_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
         dtype=float
     )
 
@@ -276,6 +322,12 @@ def run_simulation(step):
         E_vals = T_vals + V_vals
 
         fig1 = plt.figure(f"Rapportgrafer Steg {step}", figsize=(12, 8))
+            T_vals[i] = float(T_func(p_M, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
+            V_vals[i] = float(V_func(p_M, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
+        E_vals = T_vals + V_vals
+
+        
+        plt.figure(f"Rapportgrafer Steg {step}", figsize=(12, 8))
 
         plt.subplot(2, 2, 1)
         plt.plot(t, theta, label=r'$\theta$ (Gunga)')
@@ -391,6 +443,35 @@ def run_simulation(step):
             {"name": "Dubblerad Kd (Kd=600)", "Kd": 600.0, "color": "green"}
         ]
         plot_parameter_variation(scenarios_Kd, param_title="Kd", filename="analys_Kd.png")
+        print(f"\nKör Steg 3: Analyserar variationer av Kp i {sim_tid_steg2} sekunder...")
+        scenarios = [
+            {"name": "Halverad Kp (Kp=5)", "Kp": 5.0, "Kd": 300.0, "d": 0.5, "color": "blue"},
+            {"name": "Nominell (Kp=10)", "Kp": 10.0, "Kd": 300.0, "d": 0.5, "color": "orange"},
+            {"name": "Dubbel Kp (Kp=20)", "Kp": 20.0, "Kd": 300.0, "d": 0.5, "color": "green"}
+        ]
+
+        plt.figure("Analys och Diskussion (Steg 3)", figsize=(14, 6))
+
+        t_span = (0, sim_tid_steg2)
+        t_eval_points = np.linspace(t_span[0], t_span[1], int((t_span[1] - t_span[0]) * 50))
+
+        for sc in scenarios:
+            sol = solve_ivp(
+                fun=lambda t, y: state_derivative(t, y, True, sc["Kp"], sc["Kd"], sc["d"]),
+                t_span=t_span,
+                y0=[0.0, phi_max, 0.0, 0.0],
+                method='RK45',
+                t_eval=t_eval_points,
+                rtol=1e-6,
+                atol=1e-8,
+                max_step=0.02
+            )
+
+            plt.subplot(1, 2, 1)
+            plt.plot(sol.t, sol.y[0], label=sc["name"], color=sc["color"], lw=1.5)
+
+            plt.subplot(1, 2, 2)
+            plt.plot(sol.t, sol.y[1], label=sc["name"], color=sc["color"], lw=1.5)
 
     elif step == 4:
         print("\n--- Kör analys av Kp (20 s) ---")
@@ -418,6 +499,17 @@ def run_simulation(step):
             {"name": "Dubblerad massa (M=136 kg)", "M": 136.0, "color": "green"}
         ]
         plot_parameter_variation(scenarios_M, param_title="M (Massa)", filename="analys_M.png")
+
+        plt.subplot(1, 2, 2)
+        plt.title('Kroppens vinkel ($\\varphi$) över tid')
+        plt.xlabel('Tid (s)')
+        plt.ylabel('Vinkel (rad)')
+        plt.legend()
+        plt.grid(True)
+
+        plt.tight_layout()
+        print("--> Klar! Visar jämförelsegraf för Steg 3.")
+        plt.show()
 
 
 if __name__ == "__main__":
