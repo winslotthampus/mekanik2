@@ -3,7 +3,12 @@ import sympy as sp
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.integrate import solve_ivp
+import os
 
+# Funktionen som bygger upp våra matematiska
+# ekvationer för de fysiska problemen
+def setup_equations():
+    print("Härleder ekvationer med SymPy...")
 # funktionen som byggeer upp våra matematiska
 # ekvationer för de fysiska problemen
 def setup_equations():
@@ -20,6 +25,7 @@ def setup_equations():
     # respektive gungan (tau_theta).
     tau, tau_theta = sp.symbols('tau tau_theta', real=True)
 
+    # Definierar vinklarna theta och phi som funktioner som beror av tiden t.
    # Definierar vinklarna theta och phi som funktioner som beror av tiden t.
     theta_f = sp.Function('theta')(t)
     phi_f = sp.Function('phi')(t)
@@ -83,6 +89,15 @@ def setup_equations():
     eq_theta_sym = sp.expand(eq_theta.subs(subs_dict))
     eq_phi_sym = sp.expand(eq_phi.subs(subs_dict))
 
+    eqns = [eq_theta_sym, eq_phi_sym]
+    M_matrix, F_vector = sp.linear_eq_to_matrix(eqns, [th_dd, ph_dd])
+
+    params = (M, k_rad, d, L, m, g, tau, tau_theta)
+    states = (th, ph, th_d, ph_d)
+
+    M_func = sp.lambdify(params + states, M_matrix, "numpy")
+    F_func = sp.lambdify(params + states, F_vector, "numpy")
+
     # Omvandlar de symboliska ekvationerna till en matrisform
     eqns = [eq_theta_sym, eq_phi_sym]
     
@@ -111,6 +126,8 @@ def setup_equations():
     return M_func, F_func, T_func, V_func
 
 
+# Nominella parametrar
+p_M_nom = 68.0
 
 p_M = 68.0
 p_k = 0.5
@@ -118,12 +135,15 @@ p_L = 2.0
 p_m = 15.0
 p_g = 9.81
 phi_max = np.pi / 2.1
+tau_max_nom = 500.0
+sim_tid_steg2 = 20  # Ändrat från 15 till 20 sekunder
 tau_max = 500.0
 sim_tid_steg2 = 15  
 
 M_func, F_func, T_func, V_func = setup_equations()
 
 
+def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d, curr_tau_max=tau_max_nom, curr_M=p_M_nom):
 def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
     theta, phi, theta_d, phi_d = y
 
@@ -131,6 +151,13 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
     tau_theta_val = 0.0
 
     if active:
+        pump_switch = 0.5 * (1.0 + np.tanh(theta_d / 0.15))
+        phi_ref = phi_max * pump_switch
+
+        tau_ideal = -curr_Kp * curr_M * p_g * curr_d * (phi - phi_ref) - curr_Kd * phi_d
+
+        tau_val = np.clip(tau_ideal, -curr_tau_max, 1.5 * curr_tau_max)
+
        
         pump_switch = 0.5 * (1.0 + np.tanh(theta_d / 0.15))
         phi_ref = phi_max * pump_switch
@@ -154,6 +181,11 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
         tau_theta_val = -c_lin * theta_d - c_quad * theta_d * abs(theta_d)
 
     M_mat = np.array(
+        M_func(curr_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
+        dtype=float
+    )
+    F_vec = np.array(
+        F_func(curr_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
         M_func(p_M, p_k, curr_d, p_L, p_m, p_g, tau_val, tau_theta_val, theta, phi, theta_d, phi_d),
         dtype=float
     )
@@ -165,6 +197,87 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
     q_dd = np.linalg.solve(M_mat, F_vec).flatten()
 
     return [theta_d, phi_d, q_dd[0], q_dd[1]]
+
+
+def plot_parameter_variation(scenarios, param_title, filename):
+    """
+    Hjälpfunktion för att köra och rita 2 grafer per bild (theta och phi över 20 sekunder)
+    samt visa och spara slutvärdena.
+    """
+    plt.figure(f"Analys - {param_title}", figsize=(14, 6))
+
+    t_span = (0, 20)
+    t_eval_points = np.linspace(t_span[0], t_span[1], int((t_span[1] - t_span[0]) * 50))
+
+    for sc in scenarios:
+        sol = solve_ivp(
+            fun=lambda t, y: state_derivative(
+                t, y, True, 
+                curr_Kp=sc.get("Kp", 10.0), 
+                curr_Kd=sc.get("Kd", 300.0), 
+                curr_d=sc.get("d", 0.5),
+                curr_tau_max=sc.get("tau_max", tau_max_nom),
+                curr_M=sc.get("M", p_M_nom)
+            ),
+            t_span=t_span,
+            y0=[0.0, phi_max, 0.0, 0.0],
+            method='RK45',
+            t_eval=t_eval_points,
+            rtol=1e-6,
+            atol=1e-8,
+            max_step=0.02
+        )
+
+        t_end = sol.t[-1]
+        theta_end = sol.y[0][-1]
+        phi_end = sol.y[1][-1]
+
+        # Graf 1: Gungans vinkel (theta)
+        plt.subplot(1, 2, 1)
+        line, = plt.plot(sol.t, sol.y[0], label=sc["name"], color=sc["color"], lw=1.5)
+        plt.plot(t_end, theta_end, 'o', color=sc["color"])
+        plt.annotate(
+            f"{theta_end:.2f} rad", 
+            xy=(t_end, theta_end), 
+            xytext=(-45, 5), 
+            textcoords='offset points',
+            color=sc["color"],
+            fontsize=9,
+            fontweight='bold'
+        )
+
+        # Graf 2: Kroppens vinkel (phi)
+        plt.subplot(1, 2, 2)
+        plt.plot(sol.t, sol.y[1], label=sc["name"], color=sc["color"], lw=1.5)
+        plt.plot(t_end, phi_end, 'o', color=sc["color"])
+        plt.annotate(
+            f"{phi_end:.2f} rad", 
+            xy=(t_end, phi_end), 
+            xytext=(-45, 5), 
+            textcoords='offset points',
+            color=sc["color"],
+            fontsize=9,
+            fontweight='bold'
+        )
+
+    plt.subplot(1, 2, 1)
+    plt.title(f'Gungans vinkel ($\\theta$) över tid – Variation av {param_title}')
+    plt.xlabel('Tid (s)')
+    plt.ylabel('Vinkel (rad)')
+    plt.legend()
+    plt.grid(True)
+
+    plt.subplot(1, 2, 2)
+    plt.title(f'Kroppens vinkel ($\\varphi$) över tid – Variation av {param_title}')
+    plt.xlabel('Tid (s)')
+    plt.ylabel('Vinkel (rad)')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=300)
+    print(f"--> Graf sparad som: {os.path.abspath(filename)}")
+    plt.show()
 
 
 def run_simulation(step):
@@ -204,6 +317,11 @@ def run_simulation(step):
         T_vals = np.zeros_like(t)
         V_vals = np.zeros_like(t)
         for i in range(len(t)):
+            T_vals[i] = float(T_func(p_M_nom, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
+            V_vals[i] = float(V_func(p_M_nom, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
+        E_vals = T_vals + V_vals
+
+        fig1 = plt.figure(f"Rapportgrafer Steg {step}", figsize=(12, 8))
             T_vals[i] = float(T_func(p_M, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
             V_vals[i] = float(V_func(p_M, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
         E_vals = T_vals + V_vals
@@ -262,6 +380,10 @@ def run_simulation(step):
         plt.axis('equal')
         plt.ylim(-3.5, 2.5)
         plt.tight_layout()
+        
+        filename = f"rapport_steg_{step}.png"
+        fig1.savefig(filename, dpi=300)
+        print(f"--> Graf sparad som: {os.path.abspath(filename)}")
         print(f"--> Visar grafer för Steg {step}. Stäng fönstret för att starta animationen.")
         plt.show()
 
@@ -314,6 +436,13 @@ def run_simulation(step):
         plt.show()
 
     elif step == 3:
+        print("\n--- Kör analys av Kd (20 s) ---")
+        scenarios_Kd = [
+            {"name": "Halverad Kd (Kd=150)", "Kd": 150.0, "color": "blue"},
+            {"name": "Nominell Kd (Kd=300)", "Kd": 300.0, "color": "orange"},
+            {"name": "Dubblerad Kd (Kd=600)", "Kd": 600.0, "color": "green"}
+        ]
+        plot_parameter_variation(scenarios_Kd, param_title="Kd", filename="analys_Kd.png")
         print(f"\nKör Steg 3: Analyserar variationer av Kp i {sim_tid_steg2} sekunder...")
         scenarios = [
             {"name": "Halverad Kp (Kp=5)", "Kp": 5.0, "Kd": 300.0, "d": 0.5, "color": "blue"},
@@ -344,12 +473,32 @@ def run_simulation(step):
             plt.subplot(1, 2, 2)
             plt.plot(sol.t, sol.y[1], label=sc["name"], color=sc["color"], lw=1.5)
 
-        plt.subplot(1, 2, 1)
-        plt.title('Gungans vinkel ($\\theta$) över tid')
-        plt.xlabel('Tid (s)')
-        plt.ylabel('Vinkel (rad)')
-        plt.legend()
-        plt.grid(True)
+    elif step == 4:
+        print("\n--- Kör analys av Kp (20 s) ---")
+        scenarios_Kp = [
+            {"name": "Halverad Kp (Kp=5)", "Kp": 5.0, "color": "blue"},
+            {"name": "Nominell Kp (Kp=10)", "Kp": 10.0, "color": "orange"},
+            {"name": "Dubblerad Kp (Kp=20)", "Kp": 20.0, "color": "green"}
+        ]
+        plot_parameter_variation(scenarios_Kp, param_title="Kp", filename="analys_Kp.png")
+
+    elif step == 5:
+        print("\n--- Kör analys av tau-max (20 s) ---")
+        scenarios_tau = [
+            {"name": "Halverad tau_max (250 Nm)", "tau_max": 250.0, "color": "blue"},
+            {"name": "Nominell tau_max (500 Nm)", "tau_max": 500.0, "color": "orange"},
+            {"name": "Dubblerad tau_max (1000 Nm)", "tau_max": 1000.0, "color": "green"}
+        ]
+        plot_parameter_variation(scenarios_tau, param_title="tau-max", filename="analys_tau_max.png")
+
+    elif step == 6:
+        print("\n--- Kör analys av strukturparametern M (20 s) ---")
+        scenarios_M = [
+            {"name": "Halverad massa (M=34 kg)", "M": 34.0, "color": "blue"},
+            {"name": "Nominell massa (M=68 kg)", "M": 68.0, "color": "orange"},
+            {"name": "Dubblerad massa (M=136 kg)", "M": 136.0, "color": "green"}
+        ]
+        plot_parameter_variation(scenarios_M, param_title="M (Massa)", filename="analys_M.png")
 
         plt.subplot(1, 2, 2)
         plt.title('Kroppens vinkel ($\\varphi$) över tid')
@@ -366,4 +515,7 @@ def run_simulation(step):
 if __name__ == "__main__":
     run_simulation(step=1)
     run_simulation(step=2)
-    run_simulation(step=3)
+    run_simulation(step=3)  # Kd
+    run_simulation(step=4)  # Kp
+    run_simulation(step=5)  # tau-max
+    run_simulation(step=6)  # M
