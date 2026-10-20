@@ -4,51 +4,72 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from scipy.integrate import solve_ivp
 
-
+# funktionen som byggeer upp våra matematiska
+# ekvationer för de fysiska problemen
 def setup_equations():
-    print("Härleder ekvationer med SymPy (detta tar några sekunder)...")
+    print("Härleder ekvationer med SymPy")
+    # Definierar tiden (t) som en symbolisk variabel i SymPy
     t = sp.Symbol('t')
 
-    # Parametrar
+    # Skapar symboliska konstanter: M = personens massa, k_rad = tröghetsradie,
+    # d = avstånd från sits till masscentrum, L = gungans längd, 
+    # m = gungans massa, g = tyngdacceleration. real=True säger att vi 
+    # räknar med reella tal
     M, k_rad, d, L, m, g = sp.symbols('M k d L m g', real=True)
+    # Skapar symboler för vridmomenten (kraften) som appliceras på personen (tau) 
+    # respektive gungan (tau_theta).
     tau, tau_theta = sp.symbols('tau tau_theta', real=True)
 
-    # Tidsberoende funktioner
+   # Definierar vinklarna theta och phi som funktioner som beror av tiden t.
     theta_f = sp.Function('theta')(t)
     phi_f = sp.Function('phi')(t)
+    # Beräknar förstaderivatan (vinkelhastigheten) för båda vinklarna 
+    # med avseende på tiden
     theta_f_d = sp.diff(theta_f, t)
     phi_f_d = sp.diff(phi_f, t)
 
-    # KINEMATIK:
-    # phi = 0 -> Sittande vinkelrät. phi = phi_max -> Stående längs med gungan (upprätt).
+    # Ställer upp en ekvation för gungans sits (punkt B) position
+    # i x- och y-led baserat på vinkeln theta och längden L.
     x_B = L * sp.sin(theta_f)
     y_B = -L * sp.cos(theta_f)
+    # Ställer upp positionen för personens masscentrum (punkt C) 
+    # baserat på sitsens position plus avståndet d och vinklarna 
+    # theta + phi.
     x_C = x_B + d * sp.cos(theta_f + phi_f)
     y_C = y_B + d * sp.sin(theta_f + phi_f)
 
-    # Kinetisk energi T
+    # Beräknar den kvadrerade hastigheten v^2 = prick(x)^2 + prick(y)^2 
+    # för sitsen B och masscentrum C.
     v_B_sq = sp.diff(x_B, t)**2 + sp.diff(y_B, t)**2
     v_C_sq = sp.diff(x_C, t)**2 + sp.diff(y_C, t)**2
+    # Beräknar personens tröghetsmoment.
     I_M = M * k_rad**2
+    # Beräknar gungans rörelseenergi.
     T_m = 0.5 * m * v_B_sq
+    # Beräknar personens kinetiska energi 
+    # (både translations- och rotationsenergi).
     T_M = 0.5 * M * v_C_sq + 0.5 * I_M * (theta_f_d + phi_f_d)**2
+    # Summerar den totala kinetiska energin.
     T = T_m + T_M
 
-    # Potentiell energi V
+    # Beräknar den potentiella energin för både gungan och personen
     V_m = m * g * y_B
     V_M = M * g * y_C
     V = V_m + V_M
 
-    # Lagrangian
+    # Ställer upp Lagrange-funktionen som skillnaden 
+    # mellan kinetisk och potentiell energi.
     L_lagrange = T - V
 
-    # Lagranges ekvationer: d/dt(dL/dq_d) - dL/dq = Q_q
+    # Härleder Lagrange-ekvationerna med avseende på theta och phi
     eq_theta = sp.diff(sp.diff(L_lagrange, theta_f_d), t) - sp.diff(L_lagrange, theta_f) - tau_theta
     eq_phi = sp.diff(sp.diff(L_lagrange, phi_f_d), t) - sp.diff(L_lagrange, phi_f) - tau
 
-    # Byt ut tidsderivator mot symboler för matrisform
+    # Definierar symboler för de okända variablerna: 
+    # theta, phi, deras första och andra derivator.
     th, ph, th_d, ph_d, th_dd, ph_dd = sp.symbols('th ph th_d ph_d th_dd ph_dd')
 
+    # Skapar en substitutionsordbok för att ersätta de symboliska funktionerna
     subs_dict = {
         sp.diff(theta_f_d, t): th_dd,
         sp.diff(phi_f_d, t): ph_dd,
@@ -57,15 +78,16 @@ def setup_equations():
         theta_f: th,
         phi_f: ph
     }
-
+    # Använder substitutionsordboken för att ersätta de 
+    # symboliska funktionerna i ekvationerna.
     eq_theta_sym = sp.expand(eq_theta.subs(subs_dict))
     eq_phi_sym = sp.expand(eq_phi.subs(subs_dict))
 
-    # Bryt ut massmatris M och högerled F (M * q_dd = F)
+    #
     eqns = [eq_theta_sym, eq_phi_sym]
     M_matrix, F_vector = sp.linear_eq_to_matrix(eqns, [th_dd, ph_dd])
 
-    # Skapa numeriska funktioner för snabb beräkning
+    
     params = (M, k_rad, d, L, m, g, tau, tau_theta)
     states = (th, ph, th_d, ph_d)
 
@@ -80,9 +102,7 @@ def setup_equations():
     return M_func, F_func, T_func, V_func
 
 
-# ==========================================
-# Huvudprogram och Simulering
-# ==========================================
+
 p_M = 68.0
 p_k = 0.5
 p_L = 2.0
@@ -90,7 +110,7 @@ p_m = 15.0
 p_g = 9.81
 phi_max = np.pi / 2.1
 tau_max = 500.0
-sim_tid_steg2 = 15  # Längd på simuleringen i Steg 2 (sekunder)
+sim_tid_steg2 = 15  
 
 M_func, F_func, T_func, V_func = setup_equations()
 
@@ -102,18 +122,16 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
     tau_theta_val = 0.0
 
     if active:
-        # 1. Mjuk övergång mellan phi_ref = 0 (vid theta_d < 0) och phi_max (vid theta_d > 0)
-        # Förhindrar att ODE-lösaren fastnar vid vändpunkterna där theta_d = 0
+       
         pump_switch = 0.5 * (1.0 + np.tanh(theta_d / 0.15))
         phi_ref = phi_max * pump_switch
 
         tau_ideal = -curr_Kp * p_M * p_g * curr_d * (phi - phi_ref) - curr_Kd * phi_d
 
-        # Asymmetrisk klippning: [-tau_max, +1.5*tau_max]
+        
         tau_val = np.clip(tau_ideal, -tau_max, 1.5 * tau_max)
 
-        # 2. Fysiskt ändlägesstopp (sits och gungrep):
-        # Håller phi inom [0, phi_max] så att personen aldrig viks 180 grader med gungrepet
+        
         k_stop_phi = 3000.0
         d_stop_phi = 400.0
         if phi < 0.0:
@@ -121,8 +139,7 @@ def state_derivative(t, y, active, curr_Kp, curr_Kd, curr_d):
         elif phi > phi_max:
             tau_val += -k_stop_phi * (phi - phi_max) - d_stop_phi * phi_d
 
-        # 3. Mjukt linjärt + kvadratiskt luftmotstånd på gungan:
-        # Låter gungan öka i fart naturligt och plana ut kring ~65-75 grader utan att slå runt 360 grader
+       
         c_lin = 6.0
         c_quad = 18.0
         tau_theta_val = -c_lin * theta_d - c_quad * theta_d * abs(theta_d)
@@ -182,7 +199,7 @@ def run_simulation(step):
             V_vals[i] = float(V_func(p_M, p_k, std_d, p_L, p_m, p_g, 0, 0, theta[i], phi[i], theta_d[i], phi_d[i]))
         E_vals = T_vals + V_vals
 
-        # Statiska grafer
+        
         plt.figure(f"Rapportgrafer Steg {step}", figsize=(12, 8))
 
         plt.subplot(2, 2, 1)
