@@ -8,7 +8,6 @@ import os
 # funktionen som byggeer upp våra matematiska
 # ekvationer för de fysiska problemen
 def setup_equations():
-    print("Härleder ekvationer med SymPy")
     # Definierar tiden (t) som en symbolisk variabel i SymPy
     t = sp.Symbol('t')
 
@@ -325,7 +324,6 @@ def plot_parameter_variation(scenarios, param_title, filename):
 
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
-    print(f"--> Graf sparad som: {os.path.abspath(filename)}")
     plt.show()
 
 # Huvudfunktion som kör simuleringen för olika steg.
@@ -341,7 +339,6 @@ def run_simulation(step):
         # Anger initialt tillstånd och simuleringstid beroende på 
         # vilket steg som körs.
         if step == 1:
-            print("\nKör Steg 1: Passivt system (3 sekunder)...")
             y0 = [np.pi / 2, 0.0, 0.0, 0.0]
             t_span = (0, 3)
             active = False
@@ -349,7 +346,6 @@ def run_simulation(step):
         # Anger initialt tillstånd och simuleringstid beroende på 
         # vilket steg som körs.
         else:
-            print(f"\nKör Steg 2: Aktivt system ({sim_tid_steg2} sekunder)...")
             y0 = [0.0, phi_max, 0.0, 0.0]
             t_span = (0, sim_tid_steg2)
             active = True
@@ -365,7 +361,6 @@ def run_simulation(step):
             **solver_kwargs
         )
         # Anger att simuleringen är klar och visar hur lång tid som beräknats.
-        print(f"Simulering klar: {sol.t[-1]:.1f} av {t_span[1]} s beräknade ({len(sol.t)} bildrutor).")
 
         t = sol.t
         theta, phi, theta_d, phi_d = sol.y
@@ -436,8 +431,6 @@ def run_simulation(step):
         
         filename = f"rapport_steg_{step}.png"
         fig1.savefig(filename, dpi=300)
-        print(f"--> Graf sparad som: {os.path.abspath(filename)}")
-        print(f"--> Visar grafer för Steg {step}. Stäng fönstret för att starta animationen.")
         plt.show()
 
         # Animation
@@ -484,12 +477,10 @@ def run_simulation(step):
             return line_swing, line_person, point_B, time_text
 
         dt_ms = (t[1] - t[0]) * 1000 if len(t) > 1 else 20
-        print(f"--> Visar animation för Steg {step}. Stäng för att gå vidare.")
         ani = animation.FuncAnimation(fig2, update, frames=len(t), init_func=init, blit=True, interval=dt_ms)
         plt.show()
 
     elif step == 3:
-        print(f"\nKör Steg 3: Analyserar variationer av Kp i {sim_tid_steg2} sekunder...")
         scenarios = [
             {"name": "Halverad Kp (Kp=5)", "Kp": 5.0, "Kd": 300.0, "d": 0.5, "color": "blue"},
             {"name": "Nominell (Kp=10)", "Kp": 10.0, "Kd": 300.0, "d": 0.5, "color": "orange"},
@@ -534,7 +525,6 @@ def run_simulation(step):
         plt.grid(True)
 
         plt.tight_layout()
-        print("--> Klar! Visar jämförelsegraf för Steg 3.")
         plt.show()
 
 
