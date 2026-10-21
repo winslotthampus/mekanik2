@@ -264,8 +264,8 @@ def plot_parameter_variation(scenarios, param_title, filename):
                 curr_Kp=sc.get("Kp", 10.0), 
                 curr_Kd=sc.get("Kd", 300.0), 
                 curr_d=sc.get("d", 0.5),
-                curr_tau_max=sc.get("tau_max", tau_max_nom),
-                curr_M=sc.get("M", p_M_nom)
+                curr_tau_max=sc.get("tau_max", tau_max),
+                curr_M=sc.get("M", p_M)
             ),
             t_span=t_span,
             y0=[0.0, phi_max, 0.0, 0.0],
@@ -531,7 +531,7 @@ def run_simulation(step):
 if __name__ == "__main__":
     run_simulation(step=1)
     run_simulation(step=2)
-    # run_simulation(step=3)  # Kd
-    # run_simulation(step=4)  # Kp
-    # run_simulation(step=5)  # tau-max
-    # run_simulation(step=6)  # M
+    run_simulation(step=3)  
+    run_simulation(step=4)  
+    run_simulation(step=5)  
+    run_simulation(step=6)  
